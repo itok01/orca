@@ -5,6 +5,7 @@ import { agentSessionRefusalError } from '../../../../../../shared/agent-session
 import { agentSessionFingerprintConflict } from '../../../../../../shared/agent-session/lifecycle/operations/agent-session-mutation-envelope'
 import { AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY } from '../../../../../../shared/agent-session/lifecycle/operations/agent-session-create-capabilities'
 import type { RpcContext } from '../../../core'
+import { isAgentRpcCaller } from '../../../callers/rpc-caller-identity'
 import {
   ensureStructuredHostInstalled as ensureHostInstalled,
   requireStructuredHost as requireHost,
@@ -88,8 +89,10 @@ async function resolveAndCommitStructuredAgentSessionCreate(
   ctx: RpcContext,
   capture?: (surface: StructuredSessionSurface) => void
 ) {
+  const explicitActivate = 'activate' in params ? params.activate : undefined
   // Before attach, return refusals instead of throwing so clients can distinguish no effects from unknown outcomes.
   const prepared = await resolveUncommittedStructuredCreate(async () => {
+    const localCliCreate = ctx.caller?.kind === 'local-cli' && explicitActivate !== undefined
     if ('worktree' in params) {
       const conflict = agentSessionFingerprintConflict(
         params.envelope,
@@ -115,9 +118,11 @@ async function resolveAndCommitStructuredAgentSessionCreate(
         ...(params.optionsMode ? { optionsMode: params.optionsMode } : {}),
         ...(params.options ? { options: params.options } : {}),
         ...(params.firstMessage ? { firstMessage: params.firstMessage } : {}),
+        // Local Unix socket callers carry no clientCapabilities; local CLI resume signals the new contract via explicit `activate`.
         atRest: Boolean(
           params.forkFrom ||
           params.firstMessage ||
+          (params.resumeFrom && localCliCreate) ||
           ctx.clientCapabilities?.includes(AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY)
         )
       })
@@ -128,6 +133,8 @@ async function resolveAndCommitStructuredAgentSessionCreate(
   if ('refusal' in prepared) {
     return { ok: false, refusal: prepared.refusal }
   }
+  const pairedAgentCliFocus =
+    ctx.caller?.kind === 'paired-device' && ctx.caller.agent === true && explicitActivate === true
   try {
     // Nothing is created yet, so a close that came first refuses the create outright.
     if (
@@ -136,20 +143,51 @@ async function resolveAndCommitStructuredAgentSessionCreate(
     ) {
       return { ok: false, refusal: structuredAgentSessionClosedBeforeCreateRefusal() }
     }
-    return projectReceiptDeviceAttach(
-      await commitStructuredAgentSessionCreate({
-        runtime: ctx.runtime,
-        caller: callerFor(ctx),
-        prepared,
-        activate: true,
-        placedByWindow: ctx.caller?.kind === 'desktop',
-        ...(capture ? { capture } : {}),
-        ...('tabPlacement' in params && params.tabPlacement
-          ? { tabPlacement: params.tabPlacement }
-          : {})
-      }),
-      ctx
-    )
+    let publishedTab = false
+    const result = await commitStructuredAgentSessionCreate({
+      runtime: ctx.runtime,
+      caller: callerFor(ctx),
+      prepared,
+      onTabPublished: () => {
+        publishedTab = true
+      },
+      // A paired CLI --focus moves only that device's view rather than stealing the host desktop window.
+      activate: pairedAgentCliFocus ? false : (explicitActivate ?? true),
+      placedByWindow: ctx.caller?.kind === 'desktop',
+      ...(capture ? { capture } : {}),
+      ...('tabPlacement' in params && params.tabPlacement
+        ? { tabPlacement: params.tabPlacement }
+        : {})
+    })
+    if (
+      result.ok &&
+      prepared.tab &&
+      publishedTab &&
+      explicitActivate === true &&
+      isAgentRpcCaller(ctx.caller)
+    ) {
+      if (ctx.caller?.kind === 'local-cli') {
+        try {
+          ctx.runtime.focusLaunchedChatInHostWindow(
+            prepared.tab.workspaceId,
+            result.value.sessionId
+          )
+        } catch (error) {
+          console.warn('[agent-session] focusing resumed chat tab in host window failed', error)
+        }
+      } else if (ctx.caller?.kind === 'paired-device') {
+        try {
+          await ctx.runtime.selectCreatedMobileSessionTabForClient(
+            prepared.tab.workspaceId,
+            { sessionId: result.value.sessionId },
+            ctx.caller.deviceId
+          )
+        } catch (error) {
+          console.warn('[agent-session] focusing resumed chat tab for paired caller failed', error)
+        }
+      }
+    }
+    return projectReceiptDeviceAttach(result, ctx)
   } finally {
     await prepared.attachParams.fork?.prepared.close()
   }

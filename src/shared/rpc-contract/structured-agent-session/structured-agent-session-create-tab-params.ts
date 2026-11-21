@@ -2,10 +2,15 @@ import * as z from 'zod'
 import { isAgentSessionSurfaceTabId } from '../../agent-session/view/agent-session-surface-tab-id'
 import { Identifier } from './structured-agent-session-identifiers'
 
-/** `agentSession.create`'s tab fields. Strict payload: each is sent only to a host advertising its
- *  capability (`agentSession.create.tab-id.v1`, `agentSession.create.tab-placement.v1`). */
+/**
+ * `agentSession.create`'s tab fields. Strict payload: each is sent only to a host advertising its
+ * capability (`agentSession.create.tab-id.v1`, `agentSession.create.tab-placement.v1`,
+ * `agentSession.create.activate.v1`).
+ */
 export const CREATE_TAB_FIELDS = {
   tabId: z.string().refine(isAgentSessionSurfaceTabId, 'Invalid chat tab ID').optional(),
+  /** Whether opening the created tab activates/focuses it; defaults to true when omitted. */
+  activate: z.boolean().optional(),
   /** The host's own group and tab ids. */
   tabPlacement: z
     .object({

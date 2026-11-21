@@ -31,6 +31,8 @@ export type StructuredAgentSessionCreateParams = {
   firstMessage?: StructuredAgentSessionFirstMessage
   optionsMode?: 'replace-model-selection'
   options?: Readonly<Record<string, string>>
+  /** Sent only to a host advertising `AGENT_SESSION_CREATE_ACTIVATE_RUNTIME_CAPABILITY`. */
+  activate?: boolean
   /** Sent only to a host advertising `AGENT_SESSION_CREATE_TAB_PLACEMENT_RUNTIME_CAPABILITY`. */
   tabPlacement?: { groupId?: string; afterTabId?: string }
 }
@@ -46,6 +48,7 @@ export type StructuredAgentSessionFirstMessage = {
 /** Share create fingerprints across clients and host recomputation; ambiguous transport failures replay this durable envelope. */
 export function structuredAgentSessionCreateParams(args: {
   sessionId: string
+  clientOperationId?: string
   worktree: string
   agent: StructuredAgentId
   forkFrom?: StructuredAgentSessionForkSource
@@ -54,6 +57,8 @@ export function structuredAgentSessionCreateParams(args: {
   firstMessage?: StructuredAgentSessionFirstMessage
   optionsMode?: 'replace-model-selection'
   options?: Readonly<Record<string, string>>
+  /** A tab-focus hint, outside the fingerprint so retries match host intent verification. */
+  activate?: boolean
   /** A display hint, outside the fingerprint: a retry may name a place that moved. */
   tabPlacement?: StructuredAgentSessionCreateParams['tabPlacement']
   randomUuid: () => string
@@ -75,7 +80,9 @@ export function structuredAgentSessionCreateParams(args: {
   return {
     envelope: {
       sessionId: args.sessionId,
-      clientOperationId: createStructuredAgentSessionOperationId(args.randomUuid, args.now),
+      clientOperationId:
+        args.clientOperationId ??
+        createStructuredAgentSessionOperationId(args.randomUuid, args.now),
       expectedRuntimeFence: null,
       payloadFingerprint: structuredAgentSessionCreateFingerprint({
         sessionId: args.sessionId,
@@ -83,6 +90,7 @@ export function structuredAgentSessionCreateParams(args: {
       })
     },
     ...fields,
+    ...(args.activate !== undefined ? { activate: args.activate } : {}),
     ...(args.tabPlacement ? { tabPlacement: args.tabPlacement } : {})
   }
 }

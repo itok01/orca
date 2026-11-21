@@ -75,6 +75,7 @@ export async function sendRemoteRuntimeRequestOnSocket<TResult>(
   const attempt = (handshake: RemoteRuntimeClientHandshake) =>
     new Promise<RuntimeRpcResponse<TResult>>((resolve, reject) => {
       let settled = false
+      let requestDispatched = false
       let ws: WebSocket | null = null
       let router: RemoteRuntimeRequestResponseRouter<TResult>
 
@@ -97,14 +98,21 @@ export async function sendRemoteRuntimeRequestOnSocket<TResult>(
       let deadline = performance.now() + timeoutMs
       let timeout = setTimeout(onTimeout, timeoutMs)
 
-      function onTimeout(): void {
+      const failSocket = (
+        code: 'runtime_timeout' | 'remote_runtime_unavailable',
+        message: string,
+        closeCode?: number
+      ) =>
         finishError(
-          new RemoteRuntimeClientError(
-            'runtime_timeout',
-            'Timed out waiting for the remote Orca runtime to respond.',
-            { pairingStage: router.pairingStage }
-          )
+          new RemoteRuntimeClientError(code, message, {
+            pairingStage: router.pairingStage,
+            ...(closeCode !== undefined ? { closeCode } : {}),
+            ...(requestDispatched ? {} : { data: { requestSent: false } })
+          })
         )
+
+      function onTimeout(): void {
+        failSocket('runtime_timeout', 'Timed out waiting for the remote Orca runtime to respond.')
       }
 
       function onAbort(): void {
@@ -185,13 +193,14 @@ export async function sendRemoteRuntimeRequestOnSocket<TResult>(
             consume: () => {
               const request = takeRemoteRuntimePreparedRequest(pendingRequest)
               if (request === null) {
-                throw new RemoteRuntimeClientError(
-                  'remote_runtime_unavailable',
-                  'Remote Orca runtime request was released before it could be sent.'
-                )
+                const msg = 'Remote Orca runtime request was released before it could be sent.'
+                throw new RemoteRuntimeClientError('remote_runtime_unavailable', msg, {
+                  data: { requestSent: false }
+                })
               }
               const frame = handshake.channel.sealText(request)
               requestSelection?.onDispatch?.()
+              requestDispatched = true
               ws?.send(frame)
             }
           })
@@ -205,7 +214,9 @@ export async function sendRemoteRuntimeRequestOnSocket<TResult>(
         sealAuth: () =>
           handshake.sealAuth(
             { kind: 'token', deviceToken: connection.credential.deviceToken },
-            { clientCapabilities: remoteRuntimeClientCapabilities(clientCapabilities) }
+            {
+              clientCapabilities: remoteRuntimeClientCapabilities(clientCapabilities)
+            }
           ),
         isSettled: () => settled,
         serializedStatusRequest,
@@ -268,24 +279,14 @@ export async function sendRemoteRuntimeRequestOnSocket<TResult>(
       }
 
       function onError(error: Error): void {
-        finishError(
-          new RemoteRuntimeClientError(
-            'remote_runtime_unavailable',
-            remoteRuntimeConnectFailureMessage(error, connection.endpoint),
-            { pairingStage: router.pairingStage }
-          )
-        )
+        const msg = remoteRuntimeConnectFailureMessage(error, connection.endpoint)
+        failSocket('remote_runtime_unavailable', msg)
       }
 
       function onClose(code: number, reason: Buffer): void {
         if (!settled) {
-          finishError(
-            new RemoteRuntimeClientError(
-              'remote_runtime_unavailable',
-              formatRemoteRuntimeCloseMessage(code, reason),
-              { pairingStage: router.pairingStage, closeCode: code }
-            )
-          )
+          const msg = formatRemoteRuntimeCloseMessage(code, reason)
+          failSocket('remote_runtime_unavailable', msg, code)
         }
       }
 

@@ -246,6 +246,37 @@ describe('sendRemoteRuntimeRequest', () => {
       orchestrationRequestId: 'mutation_1'
     })
   })
+
+  it('distinguishes pre-dispatch close (requestSent: false) from post-dispatch disconnect', async () => {
+    const preSendServer = await createOneShotServer({ closeOn: 'hello' })
+    const preSendErr = await sendRemoteRuntimeRequestOnSocket(
+      preSendServer.pairing,
+      'agentSession.create',
+      { agent: 'claude' },
+      1000
+    ).catch((error: unknown) => error)
+    expect(preSendErr).toMatchObject({
+      code: 'remote_runtime_unavailable',
+      data: { requestSent: false }
+    })
+
+    let dispatchedMethod: unknown
+    const postSendServer = await createOneShotServer({
+      closeOn: 'request',
+      onRequest: (request) => {
+        dispatchedMethod = request.method
+      }
+    })
+    const postSendErr = await sendRemoteRuntimeRequestOnSocket(
+      postSendServer.pairing,
+      'agentSession.create',
+      { agent: 'claude' },
+      1000
+    ).catch((error: unknown) => error)
+    expect(dispatchedMethod).toBe('agentSession.create')
+    expect(postSendErr).toMatchObject({ code: 'remote_runtime_unavailable' })
+    expect(postSendErr).not.toMatchObject({ data: { requestSent: false } })
+  })
 })
 
 async function createSubscriptionServer(
@@ -391,6 +422,7 @@ async function createOneShotServer(
     sendUndecryptableResponse?: boolean
     keepalive?: boolean
     responseDelayMs?: number | null
+    closeOn?: 'hello' | 'request'
   } = {}
 ): Promise<{ pairing: PairedRuntimeConnection }> {
   const serverKeyPair = generateKeyPair()
@@ -407,6 +439,10 @@ async function createOneShotServer(
       }
       const frame = data.toString()
       if (!sharedKey) {
+        if (options.closeOn === 'hello') {
+          ws.close()
+          return
+        }
         const hello: { publicKeyB64?: string } = JSON.parse(frame)
         if (!hello.publicKeyB64) {
           // Legacy-only host: refuses a v2 hello the way hosts before v2 do.
@@ -434,6 +470,10 @@ async function createOneShotServer(
 
       const request = JSON.parse(plaintext) as { id: string } & Record<string, unknown>
       options.onRequest?.(request)
+      if (options.closeOn === 'request') {
+        ws.close()
+        return
+      }
       if (options.sendUndecryptableResponse) {
         ws.send('not-an-encrypted-frame')
         return

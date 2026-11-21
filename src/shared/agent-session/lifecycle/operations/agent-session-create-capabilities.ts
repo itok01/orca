@@ -13,6 +13,9 @@ export const AGENT_SESSION_CREATE_TAB_PLACEMENT_RUNTIME_CAPABILITY =
 // Create is strict: this capability lets the host own the first message from creation.
 export const AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY =
   'agentSession.create.message.v1' as const
+// Create is strict: allow callers such as CLI resume to create tabs in the background without stealing focus.
+export const AGENT_SESSION_CREATE_ACTIVATE_RUNTIME_CAPABILITY =
+  'agentSession.create.activate.v1' as const
 
 // Send is strict: advertise options before sending model/effort choices for the new turn and chat record.
 export const AGENT_SESSION_SEND_OPTIONS_RUNTIME_CAPABILITY =
@@ -52,6 +55,7 @@ export const AGENT_SESSION_CREATE_RUNTIME_CAPABILITIES = [
   AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY,
   AGENT_SESSION_CREATE_OPTIONS_MODE_RUNTIME_CAPABILITY,
   AGENT_SESSION_CREATE_TAB_PLACEMENT_RUNTIME_CAPABILITY,
+  AGENT_SESSION_CREATE_ACTIVATE_RUNTIME_CAPABILITY,
   AGENT_SESSION_SEND_OPTIONS_RUNTIME_CAPABILITY,
   AGENT_SESSION_ACCOUNT_ENV_RUNTIME_CAPABILITY,
   AGENT_SESSION_SEND_SKILLS_RUNTIME_CAPABILITY,

@@ -12,5 +12,5 @@ export type StructuredAgentSessionCreateOptions = {
   hostLaunchDirectory?: string
   catalogModels?: Parameters<typeof reserveRequestFor>[0]['models']
   /** Publish after durable creation, before agent delivery starts. */
-  publishTab?: () => Promise<void>
+  publishTab?: (context?: { replayed: boolean }) => Promise<void>
 }

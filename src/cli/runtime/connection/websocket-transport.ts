@@ -6,6 +6,7 @@ import type {
 } from '../../../shared/remote-runtime/rpc/runtime-rpc-envelope'
 import { RemoteRuntimeClientError } from '../../../shared/remote-runtime/remote-runtime-client-error'
 import { AGENT_LAUNCH_RUNTIME_CAPABILITY } from '../../../shared/agent-launch/contracts/agent-launch-runtime-capability'
+import { AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY } from '../../../shared/agent-session/lifecycle/operations/agent-session-create-capabilities'
 import {
   AGENT_SESSION_RENAME_ONLY_CLIENT_CAPABILITY,
   PI_STRUCTURED_DIALOGS_RUNTIME_CAPABILITY,
@@ -43,8 +44,22 @@ const AGENT_READ_CLIENT_CAPABILITIES = [
   PI_STRUCTURED_DIALOGS_RUNTIME_CAPABILITY
 ] as const
 
+// Paired `agentSession.create` callers (such as `chat resume`) need audience capabilities
+// for every registered chat agent plus `create.message.v1` so resume stays at-rest; keep
+// other CLI commands on `CLI_CLIENT_CAPABILITIES` to leave launch and rename gates intact.
+const AGENT_SESSION_CREATE_CLIENT_CAPABILITIES = [
+  ...AGENT_READ_CLIENT_CAPABILITIES,
+  AGENT_SESSION_CREATE_MESSAGE_RUNTIME_CAPABILITY
+] as const
+
 function clientCapabilitiesFor(method: string) {
-  return method === 'agent.read' ? AGENT_READ_CLIENT_CAPABILITIES : CLI_CLIENT_CAPABILITIES
+  if (method === 'agent.read') {
+    return AGENT_READ_CLIENT_CAPABILITIES
+  }
+  if (method === 'agentSession.create') {
+    return AGENT_SESSION_CREATE_CLIENT_CAPABILITIES
+  }
+  return CLI_CLIENT_CAPABILITIES
 }
 
 export async function sendWebSocketRequest<TResult>(

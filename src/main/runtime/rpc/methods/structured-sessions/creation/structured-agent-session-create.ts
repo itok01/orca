@@ -173,6 +173,7 @@ export async function commitStructuredAgentSessionCreate(args: {
   prepared: PreparedStructuredAgentSessionCreate
   activate: boolean
   capture?: (surface: StructuredSessionSurface) => void
+  onTabPublished?: () => void
   /** This machine's window made the create and opens the chat's tab where it reserved it. */
   placedByWindow?: boolean
   /** Where the creating client opens the chat, in this host's ids. */
@@ -180,10 +181,46 @@ export async function commitStructuredAgentSessionCreate(args: {
 }): Promise<AgentSessionMutationResult<AgentSessionAttachResult>> {
   const { prepared } = args
   const tab = prepared.tab
-  const tabPlace = {
-    ...(args.capture ? { capture: args.capture } : {}),
-    ...(args.placedByWindow ? { placedByWindow: true } : {}),
-    ...(args.tabPlacement ? { placement: args.tabPlacement } : {})
+  const publishTabIfEligible = async (
+    sessionId: string,
+    tabTarget: NonNullable<PreparedStructuredAgentSessionCreate['tab']>,
+    surfaceTabId?: string,
+    replayed = false
+  ) => {
+    const tableId = surfaceTabId ?? structuredAgentSessionTabId(sessionId)
+    args.capture?.({ tableId, presentation: { raw: null, saved: [] } })
+    if (ORCA_LAYOUT_OWNER_IS_MAIN && structuredAgentSessionClosedBeforeCreate(sessionId)) {
+      return
+    }
+    let replayPresentationUnverified = false
+    if (replayed) {
+      // Kept here as well as in founding.ts because the attach path bypasses founding.
+      if (prepared.host.deps.store.isSessionTabRetired(sessionId)) {
+        return
+      }
+      try {
+        if (args.runtime.currentLocalStructuredSessionPresentation(sessionId) !== null) {
+          return
+        }
+      } catch (error) {
+        replayPresentationUnverified = true
+        const data = { scope: 'create-tab-replay', sessionId, error }
+        prepared.host.deps.logger.warn('could not verify open tab before replay publication', data)
+      }
+    }
+    await args.runtime.publishStructuredAgentSessionTab({
+      workspaceId: tabTarget.workspaceId,
+      sessionId,
+      agent: tabTarget.agent,
+      activate: replayPresentationUnverified ? false : args.activate,
+      ...(args.capture ? { capture: args.capture } : {}),
+      ...(args.placedByWindow ? { placedByWindow: true } : {}),
+      ...(args.tabPlacement ? { placement: args.tabPlacement } : {}),
+      ...(surfaceTabId ? { tabId: surfaceTabId } : {})
+    })
+    if (!replayPresentationUnverified) {
+      args.onTabPublished?.()
+    }
   }
   if (prepared.atRest) {
     return prepared.host.create(args.caller, prepared.attachParams, {
@@ -194,29 +231,13 @@ export async function commitStructuredAgentSessionCreate(args: {
         : {}),
       ...(tab
         ? {
-            // A chat closed while it was being made gets no tab to show before main closes it.
-            publishTab: () => {
-              const sessionId = prepared.attachParams.envelope.sessionId
-              const tableId =
-                prepared.attachParams.surfaceTabId ?? structuredAgentSessionTabId(sessionId)
-              args.capture?.({ tableId, presentation: { raw: null, saved: [] } })
-              if (
-                ORCA_LAYOUT_OWNER_IS_MAIN &&
-                structuredAgentSessionClosedBeforeCreate(sessionId)
-              ) {
-                return Promise.resolve()
-              }
-              return args.runtime.publishStructuredAgentSessionTab({
-                workspaceId: tab.workspaceId,
-                sessionId,
-                agent: tab.agent,
-                activate: args.activate,
-                ...tabPlace,
-                ...(prepared.attachParams.surfaceTabId
-                  ? { tabId: prepared.attachParams.surfaceTabId }
-                  : {})
-              })
-            }
+            publishTab: (info) =>
+              publishTabIfEligible(
+                prepared.attachParams.envelope.sessionId,
+                tab,
+                prepared.attachParams.surfaceTabId,
+                info?.replayed
+              )
           }
         : {})
     })
@@ -225,30 +246,15 @@ export async function commitStructuredAgentSessionCreate(args: {
     ...(prepared.hostLaunchDirectory ? { hostLaunchDirectory: prepared.hostLaunchDirectory } : {}),
     ...(prepared.catalogModels ? { catalogModels: prepared.catalogModels } : {})
   })
-  if (!result.ok || !prepared.tab) {
+  if (!result.ok || !tab) {
     return result
   }
   const surfaceTabId =
     result.value.tabId ??
     prepared.attachParams.surfaceTabId ??
     structuredAgentSessionTabId(result.value.sessionId)
-  args.capture?.({ tableId: surfaceTabId, presentation: { raw: null, saved: [] } })
-  // A chat closed while it was being made gets no tab to show before main closes it.
-  if (
-    ORCA_LAYOUT_OWNER_IS_MAIN &&
-    structuredAgentSessionClosedBeforeCreate(result.value.sessionId)
-  ) {
-    return result
-  }
   try {
-    await args.runtime.publishStructuredAgentSessionTab({
-      workspaceId: prepared.tab.workspaceId,
-      sessionId: result.value.sessionId,
-      agent: prepared.tab.agent,
-      activate: args.activate,
-      ...tabPlace,
-      ...(surfaceTabId ? { tabId: surfaceTabId } : {})
-    })
+    await publishTabIfEligible(result.value.sessionId, tab, surfaceTabId, result.replayed)
   } catch (error) {
     prepared.host.deps.logger.warn('publishing the tab of a created chat failed', {
       scope: 'create-tab-publication',

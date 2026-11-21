@@ -29,6 +29,18 @@ const COMMAND_SCOPED_FLAG_HELP: Record<string, Record<string, string>> = {
     id: AGENT_ID_FLAG_HELP,
     limit: '--limit <n>            Newest entries to return (default 20, at most 100)'
   },
+  'chat resume': {
+    agent:
+      '--agent <id>           Agent whose conversation to resume (for example antigravity, claude, or codex)',
+    session:
+      '--session <providerSessionId>  Provider conversation or session id to resume (not an orca_session_id: address)',
+    worktree:
+      '--worktree <selector>  Target workspace selector (defaults to the workspace containing cwd locally; required on paired remote hosts)',
+    focus:
+      '--focus                Bring Orca to the resumed chat tab instead of opening it in the background',
+    'retry-resume':
+      '--retry-resume <token> Reissue an unconfirmed resume using the <sessionId>:<operationId> token from the previous error'
+  },
   'extension reload': {
     'extension-id':
       '--extension-id <id>   Installed unpacked extension ID; also accepted positionally',

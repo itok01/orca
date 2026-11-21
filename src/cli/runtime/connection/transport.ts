@@ -53,7 +53,8 @@ export async function sendRequest<TResult>(
       reject(
         new RuntimeClientError(
           'runtime_unavailable',
-          'No compatible transport found in Orca runtime metadata.'
+          'No compatible transport found in Orca runtime metadata.',
+          { requestSent: false }
         )
       )
       return
@@ -63,7 +64,8 @@ export async function sendRequest<TResult>(
       reject(
         new RuntimeClientError(
           'runtime_unavailable',
-          'Orca runtime socket directory is not private to this user.'
+          'Orca runtime socket directory is not private to this user.',
+          { requestSent: false }
         )
       )
       return
@@ -71,6 +73,7 @@ export async function sendRequest<TResult>(
     const socket = createConnection(transport.endpoint)
     let lineSegments: string[] = []
     let settled = false
+    let requestSent = false
     const requestId = randomUUID()
     const statusRequestId = requestSelection ? randomUUID() : null
     let awaitingStatus = statusRequestId !== null
@@ -86,7 +89,8 @@ export async function sendRequest<TResult>(
       reject(
         new RuntimeClientError(
           'runtime_timeout',
-          'Timed out waiting for the Orca runtime to respond.'
+          'Timed out waiting for the Orca runtime to respond.',
+          requestSent ? undefined : { requestSent: false }
         )
       )
     }, timeoutMs)
@@ -118,7 +122,10 @@ export async function sendRequest<TResult>(
           new RuntimeClientError(
             'runtime_unavailable',
             'This terminal could not connect to Orca.',
-            { nextSteps: TRANSIENT_DISCONNECT_NEXT_STEPS }
+            {
+              nextSteps: TRANSIENT_DISCONNECT_NEXT_STEPS,
+              ...(requestSent ? {} : { requestSent: false })
+            }
           )
       })
     })
@@ -129,7 +136,10 @@ export async function sendRequest<TResult>(
         error: new RuntimeClientError(
           'runtime_unavailable',
           'Orca closed the connection before responding.',
-          { nextSteps: TRANSIENT_DISCONNECT_NEXT_STEPS }
+          {
+            nextSteps: TRANSIENT_DISCONNECT_NEXT_STEPS,
+            ...(requestSent ? {} : { requestSent: false })
+          }
         )
       })
     })
@@ -209,7 +219,10 @@ export async function sendRequest<TResult>(
             error: new RuntimeClientError(
               'runtime_unavailable',
               'The Orca runtime changed while the request was in flight.',
-              { nextSteps: ['Retry the command.'] }
+              {
+                nextSteps: ['Retry the command.'],
+                ...(requestSent ? {} : { requestSent: false })
+              }
             )
           })
           return
@@ -255,6 +268,7 @@ export async function sendRequest<TResult>(
         }
         if (id === requestId) {
           requestSelection?.onDispatch?.()
+          requestSent = true
         }
         socket.write(serialized)
       } catch (error) {

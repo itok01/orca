@@ -267,9 +267,13 @@ Every agent, chat or terminal, has an Orca session ID (`orca_session_id:<id>`), 
 ```bash
 orca chat rename --session <sessionId> --name "Release notes" --json
 orca chat rename --name "Migrate auth"
+orca chat resume --agent antigravity --session <conversationId> --json
+orca chat resume --agent claude --session <providerSessionId> --worktree active --focus --json
 ```
 
-Renames a chat tab, the same as renaming it by hand. `--session` takes the `sessionId` that `orca agent launch` prints. Run inside a chat, it defaults to that chat; with `--environment` it is required.
+`chat rename` renames a chat tab, the same as renaming it by hand. `--session` takes the `sessionId` that `orca agent launch` or `orca chat resume` prints. Run inside a chat, it defaults to that chat; with `--environment` it is required.
+
+`chat resume` resumes an existing provider conversation (for example an Antigravity conversation UUID, Claude session id, or Codex thread id) directly as a structured chat tab for agents with transcript import (`antigravity`, `claude`, `codex`, `grok`, `hermes`, `omp`, `opencode`, `opencode2`, `pi`). It returns `sessionId` (for `chat rename`), `address` (`orca_session_id:<id>` for `agent show`/`read` and `orchestration send`), and an open `tabId` (changes if closed and reopened); if an Orca chat already owns that conversation (open or closed in Session History), the command refuses with its address. `--worktree` defaults to the workspace enclosing the current directory locally and is required when targeting a paired remote host. Tabs open in the background unless `--focus` is passed. If an interrupted resume reports `retryResume` (`<sessionId>:<operationId>`), rerun the exact command with `--retry-resume <token>` before the retry window expires.
 
 ## Files
 

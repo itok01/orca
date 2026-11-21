@@ -262,22 +262,25 @@ export async function foundConversation(
       }
       committed = true
     }
-    try {
-      await options.publishTab?.()
-    } catch (error) {
-      deps.logger.warn('publishing the tab of a created chat failed', {
-        scope: 'create-tab-publication',
-        sessionId,
-        error
-      })
-      await register()
-      return {
-        ok: false,
-        refusal: refuse(
-          'agent_session_operation_unknown',
-          { reason: 'tabUnconfirmed' },
-          'The chat may have been created, but its tab could not be confirmed.'
-        )
+    const tabRetired = replayed && store.isSessionTabRetired(sessionId)
+    if (!tabRetired) {
+      try {
+        await options.publishTab?.({ replayed })
+      } catch (error) {
+        deps.logger.warn('publishing the tab of a created chat failed', {
+          scope: 'create-tab-publication',
+          sessionId,
+          error
+        })
+        await register()
+        return {
+          ok: false,
+          refusal: refuse(
+            'agent_session_operation_unknown',
+            { reason: 'tabUnconfirmed' },
+            'The chat may have been created, but its tab could not be confirmed.'
+          )
+        }
       }
     }
     await register()
