@@ -39,7 +39,7 @@ import { MobileBotComputerPage } from './MobileBotComputerPage'
 import { MobileBotWhoCanAskPage } from './MobileBotWhoCanAskPage'
 import { ensureBotHomeChat } from './host-bots-read'
 import { useMobileBotWebhookSettings } from './webhooks/MobileBotWebhooks'
-import { MobileBotToolsPage, MobileBotToolsRow } from './tools/MobileBotToolsPage'
+import { useBotSoulMemorySkills } from './use-bot-soul-memory-skills'
 
 /** The bot's home folder on its computer (null until read), and where to go once Settings deletes it. */
 export type BotSettingsHome = { folderPath: string | null; onDeleted: () => void }
@@ -61,6 +61,7 @@ export function MobileBotSettingsTab(props: {
   home: BotSettingsHome
   /** Puts a draft in the bot's Home Chat, where hooks are made; null while no chat shows. */
   onAskInChat?: ((draft: string) => void) | null
+  onOpenFile?: (path: string) => void
 }) {
   const t = useMobileTranslation()
   const { bot, applyBot } = props.routeBot
@@ -88,6 +89,7 @@ export function MobileBotSettingsTab(props: {
   const access = props.accessRequests
   const lookAround = lookAroundSupported(bot.agent) ? props.upNext : null
   const webhooks = useMobileBotWebhookSettings(props, offlineBanner)
+  const knows = useBotSoulMemorySkills(props, offlineBanner, page, setPage, (next) => save(next))
   const backToSettings = {
     label: t('bots.lookAround.back', 'Back to Settings'),
     onPress: closePage
@@ -172,8 +174,8 @@ export function MobileBotSettingsTab(props: {
     }
   }
 
-  if (webhooks.page) {
-    return webhooks.page
+  if (webhooks.page || knows.page) {
+    return webhooks.page ?? knows.page
   }
 
   if (deleting) {
@@ -323,9 +325,6 @@ export function MobileBotSettingsTab(props: {
       />
     )
   }
-  if (page === 'tools') {
-    return <MobileBotToolsPage {...props} bot={bot} onBack={closePage} />
-  }
   if (page === 'who-can-ask') {
     return (
       <MobileBotWhoCanAskPage
@@ -399,13 +398,14 @@ export function MobileBotSettingsTab(props: {
           : null
       }
       accessRequests={access?.requests.length ?? 0}
+      memoryTopics={knows.memoryTopics}
       open={setPage}
       setActive={(active) => void save({ paused: !active })}
       setNotification={(key, on) =>
         void save({ notifications: { ...bot.notifications, [key]: on } })
       }
       onDelete={() => setDeleting(true)}
-      accessRows={<MobileBotToolsRow {...props} bot={bot} onOpen={() => setPage('tools')} />}
+      accessRows={knows.accessRows}
       afterAccess={webhooks.row}
       header={
         <>
