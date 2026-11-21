@@ -106,6 +106,8 @@ export function MobileBotSettingsRoot(props: {
   accessRows?: ReactNode
   /** Groups that follow Access, such as Webhooks once the bot has a hook. */
   afterAccess?: ReactNode
+  /** The Sharing group, after Access as on the desktop. */
+  sharing?: ReactNode
 }) {
   const t = useMobileTranslation()
   const { bot } = props
@@ -207,6 +209,7 @@ export function MobileBotSettingsRoot(props: {
           {props.accessRows}
         </Section>
         {props.afterAccess}
+        {props.sharing}
         <Section title={t('bots.settings.notifications', 'Notifications')}>
           {notification(
             'needsPermission',
